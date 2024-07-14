@@ -1,0 +1,326 @@
+<html lang="en"><head><base href="https://hackster.design"><title>Hackster</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" charset=utf-8>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Poppins:wght@300;400;600&family=Source+Code+Pro:wght@400;600&display=swap');
+
+  :root {
+    --text-color: #e6e0ff;
+    --accent-color: #8a4fff;
+    --secondary-color: #b19cd9;
+    --tertiary-color: #d4caff;
+    --background-color: #2a0a3a;
+    --dark-background: #0f0f1a;
+    --button-gradient: linear-gradient(135deg, #8a4fff, #302249);
+    --button-gradient-reversed: linear-gradient(135deg, #302249, #8a4fff);
+    --dark-purple: #2a0a3a;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    font-family: 'Poppins', sans-serif;
+    margin: 0;
+    padding: 0;
+    background: var(--dark-background);
+    color: var(--text-color);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow-x: hidden;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle at top left, var(--background-color) 0%, transparent 70%);
+    z-index: -1;
+  }
+
+  header {
+    background-color: rgba(15, 15, 26, 0.8);
+    backdrop-filter: blur(5px);
+    padding: 1.5rem 1rem;
+    text-align: center;
+    border-bottom: 2px solid var(--accent-color);
+    position: relative;
+    overflow: hidden;
+  }
+
+  header::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-image: 
+      linear-gradient(to right, rgba(138, 79, 255, 0.1) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(138, 79, 255, 0.1) 1px, transparent 1px),
+      url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><text x="10" y="30" font-family="monospace" font-size="10" fill="%238a4fff">01001</text><text x="10" y="50" font-family="monospace" font-size="10" fill="%238a4fff">10110</text><text x="10" y="70" font-family="monospace" font-size="10" fill="%238a4fff">01010</text><text x="10" y="90" font-family="monospace" font-size="10" fill="%238a4fff">11001</text></svg>');
+    background-size: 20px 20px, 20px 20px, 100px 100px;
+    opacity: 0.3;
+    z-index: -1;
+    animation: moveBackground 20s linear infinite;
+  }
+
+  @keyframes moveBackground {
+    0% {
+      background-position: 0 0, 0 0, 0 0;
+    }
+    100% {
+      background-position: 40px 40px, 40px 40px, 200px 200px;
+    }
+  }
+
+  h1 {
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 700;
+    color: transparent;
+    background: var(--button-gradient);
+    -webkit-background-clip: text;
+    background-clip: text;
+    margin: 0;
+    font-size: 2.5rem;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    position: relative;
+    z-index: 1;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+    animation: glitch 10s infinite alternate;
+  }
+
+  @keyframes glitch {
+    0% {
+      text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+    }
+    25% {
+      text-shadow: -2px -2px 0 rgba(138, 79, 255, 0.5), 2px 2px 0 rgba(21, 21, 29, 0.767);
+    }
+    50% {
+      text-shadow: 2px -2px 0 rgba(138, 79, 255, 0.5), -2px 2px 0 rgba(21, 21, 29, 0.767);
+    }
+    75% {
+      text-shadow: -2px 2px 0 rgba(138, 79, 255, 0.5), 2px -2px 0 rgba(21, 21, 29, 0.767);
+    }
+    100% {
+      text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+    }
+  }
+
+  main {
+    flex-grow: 1;
+    width: 100%;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    z-index: 1;
+  }
+
+  h2 {
+    color: var(--secondary-color);
+    font-weight: 600;
+    font-size: 1.8rem;
+    margin-bottom: 1rem;
+  }
+
+  p {
+    font-size: 1rem;
+    line-height: 1.6;
+    color: var(--text-color);
+  }
+
+  .chat-interface {
+    background-color: rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    padding: 1rem;
+    margin-top: 1.5rem;
+    backdrop-filter: blur(4px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  #chat-messages {
+    height: 250px;
+    overflow-y: auto;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    padding: 0.5rem;
+    margin-bottom: 1rem;
+    border-radius: 8px;
+  }
+
+  .message {
+    margin-bottom: 0.8rem;
+    padding: 0.7rem 1rem;
+    border-radius: 20px;
+    max-width: 80%;
+    font-weight: 500;
+    font-size: 0.9rem;
+  }
+
+  .user-message {
+    background-color: rgba(138, 79, 255, 0.2);
+    align-self: flex-end;
+    margin-left: auto;
+    color: var(--tertiary-color);
+  }
+
+  .ai-message {
+    background-color: rgba(177, 156, 217, 0.2);
+    align-self: flex-start;
+    color: var(--text-color);
+  }
+
+  #user-input {
+    width: 100%;
+    padding: 0.8rem;
+    border: none;
+    border-radius: 25px;
+    background-color: rgba(255, 255, 255, 0.1);
+    color: var(--text-color);
+    font-family: 'Source Code Pro', monospace;
+    font-size: 0.9rem;
+  }
+
+  #user-input::placeholder {
+    color: rgba(230, 224, 255, 0.5);
+  }
+
+  button {
+    background: var(--button-gradient);
+    color: var(--text-color);
+    border: none;
+    padding: 0.8rem 1.5rem;
+    border-radius: 25px;
+    cursor: pointer;
+    margin-top: 0.8rem;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-family: 'Source Code Pro', monospace;
+    width: 100%;
+  }
+
+  button:hover {
+    background: var(--button-gradient-reversed);
+    opacity: 0.9;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(138, 79, 255, 0.3);
+  }
+
+  button:active {
+    color: var(--dark-purple);
+  }
+
+  @media (min-width: 768px) {
+    header {
+      padding: 2rem 1.5rem;
+    }
+
+    h1 {
+      font-size: 3rem;
+      letter-spacing: 4px;
+    }
+
+    main {
+      padding: 2rem;
+    }
+
+    h2 {
+      font-size: 2rem;
+    }
+
+    p {
+      font-size: 1.1rem;
+    }
+
+    .chat-interface {
+      padding: 1.5rem;
+    }
+
+    #chat-messages {
+      height: 300px;
+    }
+
+    .message {
+      font-size: 1rem;
+    }
+
+    #user-input {
+      font-size: 1rem;
+    }
+
+    button {
+      font-size: 1rem;
+      width: auto;
+    }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Hackster</h1>
+  </header>
+  <main>
+    <h2>Welcome to Hackster</h2>
+    <p>Unleash your creativity with our AI-powered hacking assistant. Transform your ideas into cutting-edge exploits and elevate your cybersecurity skills. Start by sharing your vision or exploring advanced hacking techniques.</p>
+    <div class="chat-interface">
+      <div id="chat-messages">
+        <div class="message ai-message">Greetings, fellow hacker! I'm your AI partner in digital mischief, ready to turn your ideas into groundbreaking exploits. What system shall we breach today?</div>
+      </div>
+      <input type="text" id="user-input" placeholder="$ input your hacking concepts...">
+      <button onclick="sendMessage()">Send</button>
+    </div>
+  </main>
+
+  <script>
+    function sendMessage() {
+      const userInput = document.getElementById('user-input');
+      const chatMessages = document.getElementById('chat-messages');
+      
+      if (userInput.value.trim() !== '') {
+        // Add user message
+        const userMessage = document.createElement('div');
+        userMessage.className = 'message user-message';
+        userMessage.textContent = userInput.value;
+        chatMessages.appendChild(userMessage);
+        
+        // Simulate AI response
+        setTimeout(() => {
+          const aiMessage = document.createElement('div');
+          aiMessage.className = 'message ai-message';
+          aiMessage.textContent = generateAIResponse(userInput.value);
+          chatMessages.appendChild(aiMessage);
+          
+          // Scroll to bottom
+          chatMessages.scrollTop = chatMessages.scrollHeight;
+        }, 1000);
+        
+        userInput.value = '';
+      }
+    }
+
+    function generateAIResponse(userMessage) {
+      const responses = [
+        "Brilliant hack! Let's optimize it by implementing a neural network-based intrusion detection evasion technique. How would you approach this machine learning integration?",
+        "Intriguing exploit! We could elevate this attack by injecting some polymorphic malware. Which system components do you think would be most vulnerable to this evolving threat?",
+        "You've breached new territory here. Let's explore how we can use quantum computing algorithms to crack next-gen encryption. Any specific quantum principles you'd like to incorporate?",
+        "Masterful code injection! Stealth is our priority. How about we implement a rootkit that leverages AI to adapt its behavior and evade detection?",
+        "Innovative penetration! To push it further, we could incorporate blockchain technology for a decentralized command and control structure. What unique features could this add to our attack infrastructure?",
+        "That's a zero-day concept! Let's consider implementing an AI-driven vulnerability scanner that learns and evolves with each system it encounters. How would you prioritize the core learning algorithms?"
+      ];
+      return responses[Math.floor(Math.random() * responses.length)];
+    }
+  </script>
+</body></html>
