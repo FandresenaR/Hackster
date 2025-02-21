@@ -300,7 +300,7 @@ def main():
     load_css()
     
     st.markdown("<h1 class='title'>Pentest Automation Tool</h1>", unsafe_allow_html=True)
-    st.markdown("<p class='subtitle'>Expert Edition with Shodan & Vulners - Powered by xAI</p>", unsafe_allow_html=True)
+    st.markdown("<p class='subtitle'>Expert Edition with Shodan & Vulners</p>", unsafe_allow_html=True)
 
     with st.container():
         st.markdown("<div class='main-container'>", unsafe_allow_html=True)
