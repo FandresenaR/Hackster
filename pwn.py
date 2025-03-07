@@ -2,35 +2,25 @@ import streamlit as st
 import sys
 import os
 from datetime import datetime
+from dotenv import load_dotenv
+
+# Import pwntools avec gestion des erreurs
+try:
+    from pwn import *
+    context.clear()  # Réinitialiser le contexte
+    context.update(arch='amd64', os='linux', log_level='debug')
+except ImportError:
+    st.error("❌ Erreur: pwntools n'est pas installé. Exécutez 'pip install pwntools'")
+    sys.exit(1)
+except Exception as e:
+    st.error(f"❌ Erreur d'initialisation pwntools: {str(e)}")
+    sys.exit(1)
+
 import socket
 import requests
 import re
 from concurrent.futures import ThreadPoolExecutor
 from googletrans import Translator
-
-# Import pwntools avec gestion des erreurs Windows
-try:
-    import logging
-    logging.getLogger('pwnlib').setLevel(logging.ERROR)
-    
-    from pwn import *
-    
-    # Configuration spécifique pour Windows
-    context.terminal = ['cmd.exe', '/c']
-    context.clear()
-    context.update(arch='amd64', os='windows', log_level='debug')
-    context.binary = None
-
-except ImportError as e:
-    st.error(f"""❌ Erreur d'installation pwntools. Exécutez :
-    pip install --upgrade pip
-    pip install wheel capstone unicorn pwntools""")
-    sys.exit(1)
-except Exception as e:
-    st.error(f"❌ Erreur d'initialisation pwntools: {str(e)}")
-    st.error("Essayez de redémarrer Python/VS Code en tant qu'administrateur")
-    sys.exit(1)
-
 import streamlit.runtime.scriptrunner.script_runner as script_runner
 
 # Script runner context fix
@@ -59,19 +49,23 @@ if __name__ == "__main__":
 
 # Définir une seule fois le sélecteur de langue
 def create_language_selector():
-    """Crée et retourne le sélecteur de langue dans la barre latérale"""
-    if 'language' not in st.session_state:
-        st.session_state['language'] = "🇫🇷 FR"
-    
-    return st.sidebar.radio(
-        label="Sélectionner la langue / Select language",
-        options=["🇫🇷 FR", "🇬🇧 EN"],
-        key="language_selector",
-        index=0 if st.session_state['language'] == "🇫🇷 FR" else 1
-    )
+    lang_col1, lang_col2 = st.columns([6, 1])
+    with lang_col2:
+        return st.radio(
+            label="Sélectionner la langue / Select language",
+            options=["🇫🇷 FR", "🇬🇧 EN"]
+        )
 
-# Utilisation du sélecteur de langue
-current_lang = create_language_selector()
+# Initialisation de la langue par défaut dans session_state
+if 'language' not in st.session_state:
+    st.session_state['language'] = "🇫🇷 FR"
+
+# Définition de la variable current_lang basée sur le sélecteur de langue
+current_lang = st.sidebar.radio(
+    "Sélectionner la langue / Select language",
+    ["🇫🇷 FR", "🇬🇧 EN"],
+    key="language_selector"
+)
 
 # Mettre à jour la langue dans session_state
 st.session_state['language'] = current_lang
@@ -200,7 +194,7 @@ def translate_text(text, dest='en'):
 def search_cves(service_info):
     """Recherche les CVE associées aux services détectés via NVD API"""
     cve_results = []
-    cve_results.append("🔍 Démarrage de la recherche de vulnérabilités via NIST...")
+    cve_results.append("🔍 Démarrage de la recherche de vulnérabilités via NVD...")
     
     try:
         for line in service_info.split('\n'):
@@ -209,61 +203,75 @@ def search_cves(service_info):
                 if service_match:
                     port = service_match.group(1)
                     service = service_match.group(2)
+                    version_info = service_match.group(3).strip()
                     
                     cve_results.append(f"\n📌 Analyse du service: {service} (Port {port})")
                     
-                    # Utilisation de l'API NIST
-                    data = query_nist_api(service)
-                    if data:
-                        vulns = data.get('vulnerabilities', [])
-                        
-                        if not vulns:
-                            cve_results.append(f"✅ Aucune vulnérabilité connue pour {service}")
-                        else:
-                            for vuln in vulns:
-                                cve = vuln['cve']
-                                cve_id = cve['id']
-                                description = cve.get('descriptions', [{}])[0].get('value', 'Pas de description')
-                                metrics = cve.get('metrics', {}).get('cvssMetricV31', [{}])[0]
-                                cvss_score = metrics.get('cvssData', {}).get('baseScore', 'N/A')
-                                
-                                try:
-                                    cvss_score = float(cvss_score)
-                                except ValueError:
-                                    cvss_score = 'N/A'
-                                
-                                severity = "🔴" if isinstance(cvss_score, (int, float)) and cvss_score >= 7 else \
-                                         "🟡" if isinstance(cvss_score, (int, float)) and cvss_score >= 4 else \
-                                         "🟢" if isinstance(cvss_score, (int, float)) else "❓"
-                                
-                                cve_results.append(
-                                    f"{severity} {cve_id} (CVSS: {cvss_score})\n"
-                                    f"   └─ Description: {description[:200]}..."
-                                )
+                    # Construction de la requête NVD
+                    base_url = "https://services.nvd.nist.gov/rest/json/cves/2.0"
+                    params = {
+                        "keywordSearch": f"{service}",
+                        "resultsPerPage": 5
+                    }
                     
+                    try:
+                        response = requests.get(base_url, params=params, timeout=10)
+                        if response.status_code == 200:
+                            data = response.json()
+                            vulns = data.get('vulnerabilities', [])
+                            
+                            if not vulns:
+                                cve_results.append(f"✅ Aucune vulnérabilité connue pour {service}")
+                            else:
+                                for vuln in vulns:
+                                    cve = vuln['cve']
+                                    cve_id = cve['id']
+                                    description = cve.get('descriptions', [{}])[0].get('value', 'Pas de description')
+                                    metrics = cve.get('metrics', {}).get('cvssMetricV31', [{}])[0]
+                                    cvss_score = metrics.get('cvssData', {}).get('baseScore', 'N/A')
+                                    
+                                    # Convertir le score CVSS en nombre si possible
+                                    try:
+                                        cvss_score = float(cvss_score)
+                                    except ValueError:
+                                        cvss_score = 'N/A'
+                                    
+                                    # Émoji basé sur le score CVSS
+                                    if isinstance(cvss_score, (int, float)):
+                                        severity = "🔴" if cvss_score >= 7 else "🟡" if cvss_score >= 4 else "🟢"
+                                    else:
+                                        severity = "❓"
+                                    
+                                    cve_results.append(
+                                        f"{severity} {cve_id} (CVSS: {cvss_score})\n"
+                                        f"   └─ Description: {description[:200]}..."
+                                    )
+                        else:
+                            cve_results.append(f"⚠️ Erreur API NVD: {response.status_code}")
+                            
+                    except requests.exceptions.RequestException as e:
+                        cve_results.append(f"⚠️ Erreur réseau: {str(e)}")
+                        continue
+                        
         return "\n".join(cve_results)
         
     except Exception as e:
         return f"❌ Erreur globale: {str(e)}\n💡 Conseil: Vérifiez votre connexion Internet"
 
-def query_nist_api(service_name, max_results=5):
-    """Interroge l'API NIST pour obtenir les CVE"""
-    base_url = "https://services.nvd.nist.gov/rest/json/cves/2.0"
-    params = {
-        "keywordSearch": service_name,
-        "resultsPerPage": max_results
-    }
+def verify_shodan_api():
+    """Vérifie la validité de la clé API Shodan"""
+    load_dotenv()
+    SHODAN_API_KEY = os.getenv('SHODAN_API_KEY')
     
+    if not SHODAN_API_KEY:
+        return False, "Clé API non trouvée dans le fichier .env"
+        
     try:
-        response = requests.get(base_url, params=params, timeout=10)
-        if response.status_code == 200:
-            return response.json()
-        else:
-            st.error(f"⚠️ Erreur API NIST: {response.status_code}")
-            return None
-    except requests.exceptions.RequestException as e:
-        st.error(f"⚠️ Erreur réseau: {str(e)}")
-        return None
+        api = shodan.Shodan(SHODAN_API_KEY)
+        info = api.info()
+        return True, "Clé API valide"
+    except Exception as e:
+        return False, f"Erreur de validation de la clé API: {str(e)}"
 
 def load_subdomain_list():
     """Charge une liste de sous-domaines à partir d'un fichier distant"""
@@ -402,10 +410,6 @@ if st.button(texts[current_lang]["analyze"]):
     if target:
         with st.spinner("Analyse en cours..."):
             # Analyse automatique
-            analysis_results = auto_enum(target)
-            
-            # Afficher les résultats de l'énumération
-            st.subheader("🔍 Résultats de l'énumération")
             analysis_results = auto_enum(target)
             
             # Afficher les résultats de l'énumération
@@ -751,3 +755,17 @@ def validate_input(target, port, shellcode_type):
         return False
         
     return True
+
+def init_context(arch='amd64', os='linux', log_level='debug'):
+    """Initialise le contexte pwntools de manière sécurisée"""
+    try:
+        context.clear()
+        context.update(
+            arch=arch,
+            os=os,
+            log_level=log_level
+        )
+        return True
+    except Exception as e:
+        st.error(f"❌ Erreur d'initialisation du contexte: {str(e)}")
+        return False
