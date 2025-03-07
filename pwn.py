@@ -87,9 +87,18 @@ st.session_state['language'] = current_lang
 def scan_port(host, port):
     """Scan d'un port avec gestion d'erreurs améliorée"""
     try:
+        # Nettoyer l'URL pour obtenir le hostname
+        if host.startswith(('http://', 'https://')):
+            from urllib.parse import urlparse
+            parsed = urlparse(host)
+            host = parsed.netloc
+            # Supprimer le port s'il est dans l'URL
+            if ':' in host:
+                host = host.split(':')[0]
+        
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.settimeout(2)  # Augmentation du timeout
-            result = s.connect_ex((host, port))  # Utilisation de connect_ex au lieu de connect
+            s.settimeout(2)
+            result = s.connect_ex((host, port))
             if result == 0:
                 return port
             return None
@@ -151,32 +160,51 @@ def auto_enum(target):
     """Énumération automatique de la cible avec plus de détails"""
     results = []
     try:
-        # Vérification de la validité de la cible
+        # Nettoyage et validation de la cible
         domain = target
         if target.startswith(('http://', 'https://')):
             from urllib.parse import urlparse
             parsed = urlparse(target)
             domain = parsed.netloc
-        results.append(f"🔍 Démarrage de l'analyse pour: {target}")
+            # Supprimer le port s'il est dans l'URL
+            if ':' in domain:
+                domain = domain.split(':')[0]
+
+        # Vérifier si le domaine est valide
+        try:
+            socket.gethostbyname(domain)
+        except socket.gaierror:
+            return f"❌ Erreur: Impossible de résoudre le domaine '{domain}'"
+
+        results.append(f"🔍 Démarrage de l'analyse pour: {domain}")
         
-        # Énumération des sous-domaines
-        results.append("\n📡 Recherche de sous-domaines...")
-        subdomains = enumerate_subdomains(domain)
-        results.extend([f"  {line}" for line in subdomains.split('\n')])
+        # Énumération des sous-domaines dans le thread principal
+        results.append("\n📡 Recherche de sous-domains...")
+        with st.spinner("Analyse des sous-domaines en cours..."):
+            subdomains = enumerate_subdomains(domain)
+            results.extend([f"  {line}" for line in subdomains.split('\n')])
         
         # Scan des ports
         results.append("\n🔍 Scan des ports...")
         common_ports = [21, 22, 23, 25, 80, 443, 445, 3306, 3389, 8080]
-        with st.spinner(f"Scan des ports en cours..."):
-            with ThreadPoolExecutor(max_workers=10) as executor:
-                open_ports = list(filter(None, executor.map(
-                    lambda p: scan_port(target, p), common_ports
-                )))
+        
+        # Utiliser un contexte de progression distinct
+        scan_progress = st.empty()
+        open_ports = []
+        
+        for i, port in enumerate(common_ports):
+            scan_progress.progress((i + 1) / len(common_ports))
+            result = scan_port(target, port)
+            if result:
+                open_ports.append(result)
+        
+        scan_progress.empty()
+
         if not open_ports:
             results.append("ℹ️ Aucun port ouvert trouvé")
         else:
             results.append(f"✅ Ports ouverts trouvés: {open_ports}")
-        
+            
         # Détection de version avec nmap si des ports sont ouverts
         if open_ports:
             results.append("\n🔍 Analyse des services en cours...")
@@ -274,37 +302,54 @@ def enumerate_subdomains(domain):
     """Énumère les sous-domaines d'un domaine donné avec une liste étendue"""
     subdomains = []
     found_count = 0
-    max_subdomains = 100  # Limite pour éviter une énumération trop longue
+    max_subdomains = 100
+
     try:
-        # Charger la liste complète des sous-domains
+        # Charger la liste des sous-domaines
         subdomain_list = load_subdomain_list()
+        if not subdomain_list:
+            return "Aucune liste de sous-domaines n'a pu être chargée"
+
+        # Créer la barre de progression dans le contexte principal de Streamlit
+        progress_placeholder = st.empty()
         total = len(subdomain_list)
-        with st.progress(0) as progress_bar:
-            for i, sub in enumerate(subdomain_list):
-                if found_count >= max_subdomains:
-                    subdomains.append(f"⚠️ Limite de {max_subdomains} sous-domaines atteinte")
-                    break
-                subdomain = f"{sub}.{domain}"
-                try:
-                    ip = socket.gethostbyname(subdomain)
-                    subdomains.append(f"✅ {subdomain:<50} -> {ip}")
-                    found_count += 1
-                except socket.gaierror:
-                    continue
-                except Exception as e:
-                    subdomains.append(f"❌ Erreur pour {subdomain}: {str(e)}")
-                # Mise à jour de la barre de progression
-                progress_bar.progress((i + 1) / total)
+
+        for i, sub in enumerate(subdomain_list):
+            # Mise à jour de la progression
+            progress = (i + 1) / total
+            progress_placeholder.progress(progress)
+
+            if found_count >= max_subdomains:
+                subdomains.append(f"⚠️ Limite de {max_subdomains} sous-domaines atteinte")
+                break
+
+            subdomain = f"{sub}.{domain}"
+            try:
+                # Utiliser getaddrinfo au lieu de gethostbyname pour une meilleure fiabilité
+                socket.getaddrinfo(subdomain, None)
+                ip = socket.gethostbyname(subdomain)
+                subdomains.append(f"✅ {subdomain:<50} -> {ip}")
+                found_count += 1
+            except socket.gaierror:
+                continue
+            except Exception as e:
+                subdomains.append(f"❌ Erreur pour {subdomain}: {str(e)}")
+
+        # Nettoyage de la barre de progression
+        progress_placeholder.empty()
+
         if not subdomains:
             return "Aucun sous-domaine trouvé"
+
         summary = f"""
 🔍 Résultats de l'énumération des sous-domaines pour {domain}:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ✓ Sous-domaines trouvés: {found_count}
-✓ Sous-domaines testés: {total}
+✓ Sous-domaines testés: {i + 1}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
         return summary + "\n".join(subdomains)
+
     except Exception as e:
         return f"❌ Erreur lors de l'énumération: {str(e)}"
 
