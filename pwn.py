@@ -7,6 +7,8 @@ from dotenv import load_dotenv
 # Import pwntools avec gestion des erreurs
 try:
     from pwn import *
+    from pwnlib import context, shellcraft
+    from pwnlib.asm import asm
     context.clear()  # Réinitialiser le contexte
     context.update(arch='amd64', os='linux', log_level='debug')
 except ImportError:
@@ -257,21 +259,6 @@ def search_cves(service_info):
         
     except Exception as e:
         return f"❌ Erreur globale: {str(e)}\n💡 Conseil: Vérifiez votre connexion Internet"
-
-def verify_shodan_api():
-    """Vérifie la validité de la clé API Shodan"""
-    load_dotenv()
-    SHODAN_API_KEY = os.getenv('SHODAN_API_KEY')
-    
-    if not SHODAN_API_KEY:
-        return False, "Clé API non trouvée dans le fichier .env"
-        
-    try:
-        api = shodan.Shodan(SHODAN_API_KEY)
-        info = api.info()
-        return True, "Clé API valide"
-    except Exception as e:
-        return False, f"Erreur de validation de la clé API: {str(e)}"
 
 def load_subdomain_list():
     """Charge une liste de sous-domaines à partir d'un fichier distant"""
@@ -632,6 +619,36 @@ payload = "`whoami`|base64"
                 value=payload_dict[preset_payload]["code"],
                 key="custom_payload"
             )
+
+def validate_input(target, port, shellcode_type):
+    """Valide les paramètres d'entrée"""
+    if not target:
+        st.error("❌ La cible est requise")
+        return False
+        
+    if not 1 <= port <= 65535:
+        st.error("❌ Le port doit être entre 1 et 65535")
+        return False
+        
+    if shellcode_type not in ['shell_bind_tcp', 'shell_reverse_tcp', 'execve']:
+        st.error("❌ Type de shellcode non valide")
+        return False
+        
+    return True
+
+def init_context(arch='amd64', os='linux', log_level='debug'):
+    """Initialise le contexte pwntools de manière sécurisée"""
+    try:
+        context.clear()
+        context.update(
+            arch=arch,
+            os=os,
+            log_level=log_level
+        )
+        return True
+    except Exception as e:
+        st.error(f"❌ Erreur d'initialisation du contexte: {str(e)}")
+        return False
 
 # Correction de l'erreur de return et du contexte Streamlit
 
