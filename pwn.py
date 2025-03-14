@@ -1663,28 +1663,33 @@ if st.button(texts[current_lang]["generate"]):
     if validate_input(target, custom_port, shellcode_type):
         try:
             with st.spinner("Génération de l'exploit..."):
-                if not generator.is_available():
-                    st.error(f"❌ pwntools n'est pas initialisé. Erreur: {generator.get_error()}")
-                    st.info("💡 Pour installer pwntools:\n```bash\npip install pwntools\n```")
-                    st.info("Si pwntools est déjà installé, essayez de redémarrer l'application.")
+                if generator is None:
+                    print("❌ Erreur de génération: Le générateur n'a pas été correctement initialisé")
+                    # Si nécessaire, ajoutez ici du code pour gérer cette situation
+                    # Par exemple, réinitialiser le générateur ou proposer une alternative
                 else:
-                    exploit = generator.generate_exploit_code(
-                        shellcode_type=shellcode_type,
-                        target=target,
-                        custom_port=custom_port,
-                        selected_arch=selected_arch
-                    )
-                    
-                    if exploit.startswith("#!/usr/bin/python3\n#"):
-                        st.error(exploit.split('\n')[1].strip('# '))
+                    if not generator.is_available():
+                        st.error(f"❌ pwntools n'est pas initialisé. Erreur: {generator.get_error()}")
+                        st.info("💡 Pour installer pwntools:\n```bash\npip install pwntools\n```")
+                        st.info("Si pwntools est déjà installé, essayez de redémarrer l'application.")
                     else:
-                        st.code(exploit, language="python")
-                        st.download_button(
-                            label="📥 Télécharger l'exploit",
-                            data=exploit,
-                            file_name=f"exploit_{target}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.py",
-                            mime="text/plain",
+                        exploit = generator.generate_exploit_code(
+                            shellcode_type=shellcode_type,
+                            target=target,
+                            custom_port=custom_port,
+                            selected_arch=selected_arch
                         )
+                        
+                        if exploit.startswith("#!/usr/bin/python3\n#"):
+                            st.error(exploit.split('\n')[1].strip('# '))
+                        else:
+                            st.code(exploit, language="python")
+                            st.download_button(
+                                label="📥 Télécharger l'exploit",
+                                data=exploit,
+                                file_name=f"exploit_{target}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.py",
+                                mime="text/plain",
+                            )
         except Exception as e:
             st.error(f"❌ Erreur de génération: {str(e)}")
             import traceback
